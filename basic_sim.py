@@ -2,6 +2,7 @@ import argparse
 import numpy as np 
 import matplotlib.pyplot as plt 
 from scipy.integrate import odeint
+from scipy import optimize
 
 class Pod:
     def __init__(self, mass, friction_coeff, thrust):
@@ -38,8 +39,40 @@ class Simulation:
     def setup(self, applied_thrust, start_time, target_velocity):
         self.thrust_vector[int(start_time):] = applied_thrust
         self.target_velocity = target_velocity
+
+    def fit(self, parameters):
+        time_vector = np.linspace(0, self.total_time, self.no_steps)
+        thrust_vector = np.zeros(self.no_steps)
+        velocity_vector = np.zeros(self.no_steps)
+        target_vector = np.zeros(self.no_steps)
+        target_velocity = 70
+        initial_velocity = 0.0
+        error = 0.0
+        self.vehicle.pid_setup(self.no_steps, parameters[0], parameters[1], parameters[2], parameters[3])
+        for i in range(self.no_steps - 1):
+            if i == 50:
+                target_velocity = 100
+            if i == 100:
+                target_velocity = 200
+            if i == 150:
+                target_velocity = 30
+            
+            current_thrust = self.vehicle.get_thrust(target_velocity, initial_velocity, velocity_vector[i - 1], i)
+            #if current_thrust > 50.0:
+                #current_thrust = 50.0
+            #elif current_thrust < -50.0:
+                #current_thrust = -50.0
+            thrust_vector[i + 1] = current_thrust
+            velocity = odeint(self.vehicle.get_accelaration, initial_velocity, [0, self.time_step], args = (current_thrust,))
+            initial_velocity = velocity[-1]
+            velocity_vector[i + 1] = initial_velocity
+            target_vector[i + 1] = target_velocity
+            error = error + abs(target_velocity - initial_velocity)
+        return error
     
     def simulate(self):
+        params = optimize.fmin(self.fit, [0.0, 0.6, 0.3, 0.5])
+        self.vehicle.pid_setup(self.no_steps, params[0], params[1], params[2], params[3])
         plt.figure(1, figsize = (5, 4))
         plt.ion()
         plt.show()
@@ -53,7 +86,7 @@ class Simulation:
                 self.target_velocity = 30
             
             if self.pid_enable:
-                current_thrust = self.vehicle.get_thrust(self.target_velocity, self.initial_velocity, self.velocity_vector[i - 1], i, self.thrust_vector[i])
+                current_thrust = self.vehicle.get_thrust(self.target_velocity, self.initial_velocity, self.velocity_vector[i - 1], i)
                 #if current_thrust > 50.0:
                     #current_thrust = 50.0
                 #elif current_thrust < -50.0:
@@ -124,9 +157,10 @@ args = parser.parse_args()
 pod = Pod(args.pod[0], args.pod[1], args.pod[2])
 sim = Simulation(args.sim[0], 1, pod, False)
 sim.setup(args.sim[1], args.sim[2], args.sim[3])
+#print(optimize.fmin(sim.fit, [0.0, 0.6, 0.3, 0.5]))
 sim.simulate()
 
-#pod.pid_setup(args.sim[0] + 1)
-#sim_pid = Simulation(args.sim[0], 1, pod, True)
-#sim_pid.setup(args.sim[1], args.sim[2], args.sim[3])
-#sim_pid.simulate()    
+pod.pid_setup(args.sim[0] + 1)
+sim_pid = Simulation(args.sim[0], 1, pod, True)
+sim_pid.setup(args.sim[1], args.sim[2], args.sim[3])
+sim_pid.simulate()    
